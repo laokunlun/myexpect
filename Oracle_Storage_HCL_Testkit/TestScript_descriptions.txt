@@ -1,0 +1,198 @@
+
+##
+##    The Oracle Storage HCL Testkit is a suite of tests for certifying
+##    storage with Oracle VM (OVM).
+##    Copyright (C) 2013 Oracle USA, Inc 
+##
+##    This file is part of the Oracle Storage HCL Testkit.
+##
+##    The Oracle Storage HCL Testkit is free software; you can redistribute 
+##    it and/or modify it under the terms of the GNU General Public License 
+##    as published by the Free Software Foundation; either version 2 of the 
+##    License, or (at your option) any later version.
+##
+##    The Oracle Storage HCL Testkit is distributed in the hope that it will
+##    be useful, but WITHOUT ANY WARRANTY; without even the implied warranty 
+##    of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+##    GNU General Public License for more details.
+##
+##    You should have received a copy of the GNU General Public License
+##    along with the Oracle Storage HCL Testkit.  If not; write to the 
+##    Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
+##    Boston, MA 02110-1301 USA. Or see <http://www.gnu.org/licenses/>.
+##
+
+A brief description of what each file is used for.
+
+runCertificationTests (python):
+  The automated portion of the certification process is performed 
+  by the runCertificationTests script.  The testkit is interactive. 
+  The user will be prompted to execute manual operations such as 
+  mapping, unmapping, and resizing LUNs, in between test cases.  
+
+
+Generic Plugin tests for Fibre Channel:
+Test_Suite_1-FibreChannel_Setup (tcl/expect):
+  Sets up the environment for testing.  Discovers OVS servers, 
+  configures VM and Storage networks, and creates vNICs for VMs
+  that will be created by subsequent tests.
+  (Test Case: GSFC-101)
+
+Test_Suite_1-FibreChannel_Map1 (tcl/expect):
+  Verifies the mapping of LUNs to each of the OVS servers
+  (Test Case: GSFC-102)
+
+Test_Suite_1-FibreChannel_Resize (tcl/expect):
+  Verifies the resizing of LUNs is visible on each of the OVS servers
+  (Test Case: GSFC-103)
+
+Test_Suite_1-FibreChannel_Unmap (tcl/expect):
+  Verifies the Unmapping of LUNs from each of the OVS servers
+  (Test Case: GSFC-104)
+
+Test_Suite_1-FibreChannel_Map2 (tcl/expect):
+  Verifies the mapping of LUNs to both OVS servers 
+  (Test Case: GSFC-105)
+
+Test_Suite_1-FibreChannel_Map3 (tcl/expect):
+  Verifies the unmapping of LUNs from both OVS servers, and the
+  resizing of LUNs which are mapped to both OVS servers.
+  (Test Case: GSFC-106)
+
+Test_Suite_1-FibreChannel_Repo (tcl/expect):
+  Creates a clustered server pool and repository, downloads assemblies,
+  templates and ISO images for VM creation, and creates VMs.
+  (Test Cases: GSFC-107 and GSFC-108)
+
+  ** Please see TestCase_descriptions for further details 
+     about specific test cases.
+
+
+
+Generic Plugin tests for iSCSI:
+Test_Suite_1-iSCSI_CHAP_setup (tcl/expect):
+  Configure the test environment for iSCSI tests using CHAP Authentication,
+  if supported.  Discover OVS servers, configure VM and Storage networks,
+  configure SAN Server, and create vnics.
+  (Test Case: GSIS-101)
+
+Test_Suite_1-iSCSI_CHAP_Map1 (tcl/expect):
+  Verify LUNs have been mapped to both OVS servers.
+  (Test Case: GSIS-201)
+
+Test_Suite_1-iSCSI_CHAP_Resize (tcl/expect):
+  Verifies the resizing of LUNs is visible on OVS servers
+  (Test Case: GSIS-202)
+
+Test_Suite_1-iSCSI_CHAP_Unmap (tcl/expect):
+  Verifies the unmapping of LUNs is visible on OVS servers, then
+  delete the SAN Server.
+  (Test Case: GSIS-203 and GSIS-204)
+
+  ** CHAP Authentication tests are only run if the user specifies
+     that this is a supported feature of the storage array.
+
+Test_Suite_1-iSCSI_Setup (tcl/expect):
+  Configure the test environment for iSCSI tests with CHAP Authentication disabled,
+  if supported.  Discover OVS servers, configure VM and Storage networks,
+  configure SAN Server, and create vnics.
+  (Test Case: GSIS-101)
+
+Test_Suite_1-iSCSI_Map1 (tcl/expect):
+  Verifies the mapping of LUNs to each of the OVS servers
+  (Test Case: GSIS-301)
+
+Test_Suite_1-iSCSI_Resize (tcl/expect):
+  Verifies the resizing of LUNs is visible on each of the OVS servers
+  (Test Case: GSIS-302)
+
+Test_Suite_1-iSCSI_Unmap (tcl/expect):
+  Verifies the unmapping of LUNs is visible on each of the OVS servers
+  (Test Case: GSIS-303)
+
+Test_Suite_1-iSCSI_Map2 (tcl/expect):
+  Verifies the mapping of LUNs to both OVS servers
+  (Test Case: GSIS-304)
+
+Test_Suite_1-iSCSI_Map3 (tcl/expect):
+  Verifies the resizing and unmapping of LUNs to both OVS servers
+  (Test Case: GSIS-305)
+
+Test_Suite_1-iSCSI_Repo (tcl/expect):
+  Creates a clustered server pool and repository, downloads assemblies,
+  templates and ISO images for VM creation, and creates VMs.
+  (Test Cases: GSIS-306 and GSIS-307)
+
+  ** Please see TestCase_descriptions for further details 
+     about specific test cases.
+
+
+
+
+Vendor Plugin tests for Fibre Channel:
+Test_Suite_2-FibreChannel_AGandVM (tcl/expect):
+  Configure the environment for the tests, discover OVS servers, create
+  VM and Storage networks, create vNICs, create Access Groups on the 
+  Storage Array, create LUNs on the Storage Array, map and unmap LUNs,
+  resize LUNs, create server pools and repositories, create VMs, 
+  migrate VMs, and clone VMs.
+  (Test Cases: VSFC-101 - 108, VSFC-201 - 208)
+
+Test_Suite_2-FibreChannel_Cleanup (tcl/expect):
+  Verify that LUNs and Access Groups can be deleted.
+
+  ** Please see TestCase_descriptions for further details 
+     about specific test cases.
+
+
+
+
+Vendor Plugin tests for iSCSI:
+Test_Suite_2-iSCSI_AGandVM (tcl/expect):
+  Configure the environment for the tests, discover OVS servers, create
+  VM and Storage networks, create vNICs, create Access Groups on the 
+  Storage Array, create LUNs on the Storage Array, map and unmap LUNs,
+  resize LUNs, create VMs, migrate VMs, and clone VMs.
+  (Test Cases: VSIS-101 - 108, VSIS-201 - 208)
+
+Test_Suite_2-iSCSI_Cleanup (tcl/expect):
+  Verify that LUNs and Access Groups can be deleted.
+
+  ** Please see TestCase_descriptions for further details 
+     about specific test cases.
+
+
+
+Generic Plugin tests for NFS:
+Test_Suite_3-NFS (tcl/expect):
+  Test suite 3 is comprised of the test cases for the Oracle Generic
+  NFS Plugins.  Details about specific test cases can been seen in 
+  the TestCase_descriptions.txt file.
+
+
+
+TearDown_test_environment (tcl/expect):
+  Cleanup of the test environment is attempted with this script.  Only
+  those items created by the scripts are removed and deleted.
+
+GetLogs (tcl/expect):
+  Copy AdminServer and CLI logs from the OVM Manager node, or copy
+  ovs-agent logs from OVM Server nodes.  The script also attempts
+  to login to each of the OVM Server nodes to run sosreport, then
+  copy the resulting tarball back to the main log directory for
+  inclusion in the overall test results package.
+
+commonExpectDef.cli (tcl/expect):
+  The library file for all of the expect scripts.
+
+hclhelper.py (python):
+  The library file for the wrapper
+
+__init__.py
+  python package
+
+ovm-hcl-config.sample
+  A sample configuration file, to illustrate the expected values for
+  the config file.
+
+  

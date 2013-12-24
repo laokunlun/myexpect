@@ -1,0 +1,143 @@
+#!/usr/bin/expect
+
+##
+##    The Oracle Storage HCL Testkit is a suite of tests for certifying
+##    storage with Oracle VM (OVM).
+##    Copyright (C) 2013 Oracle USA, Inc 
+##
+##    This file is part of the Oracle Storage HCL Testkit.
+##
+##    The Oracle Storage HCL Testkit is free software; you can redistribute 
+##    it and/or modify it under the terms of the GNU General Public License 
+##    as published by the Free Software Foundation; either version 2 of the 
+##    License, or (at your option) any later version.
+##
+##    The Oracle Storage HCL Testkit is distributed in the hope that it will
+##    be useful, but WITHOUT ANY WARRANTY; without even the implied warranty 
+##    of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+##    GNU General Public License for more details.
+##
+##    You should have received a copy of the GNU General Public License
+##    along with the Oracle Storage HCL Testkit.  If not; write to the 
+##    Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
+##    Boston, MA 02110-1301 USA. Or see <http://www.gnu.org/licenses/>.
+##
+
+source commonExpectDef.cli
+
+################# global variables #####################
+set ServerName [lindex $argv 0]
+set Password [lindex $argv 1]
+set logdir [lindex $argv 2]
+set ticket [lindex $argv 3]
+set VERBOSE [lindex $argv 4]
+set isManager [lindex $argv 5]
+
+
+set send_human {.1 .3 1 .05 2}
+set prompt ""
+
+################## static variables ####################
+set mlpath "/u01/app/oracle/ovm-manager-3/machine1/base_adf_domain/servers/AdminServer/logs/"
+set managerLogs {"AdminServer.log" "CLIAudit.log" "CLI.log" "AdminServer-diagnostic.log"}
+set serverLog "/var/log/ovs-agent.log"
+
+## Logging
+set copyLog $logdir
+append copyLog "Copy_Logs-"
+append copyLog $ServerName
+append copyLog ".log"
+
+#######################################################
+log_user 0
+log_file -a $copyLog
+set success "False"
+
+if {$isManager == "True"} {
+    send_user "\n\nAttempting to copy Admin and CLI logs from $ServerName...\n"
+    foreach log $managerLogs {
+    	set mylog $mlpath 
+	append mylog $log
+	set success [copyLog $ServerName $Password $mylog $logdir $log]
+	
+	if {$success == "True"} {
+	    send_verbose "Successfully copied $mylog to $logdir\n"
+	} else {
+	    send_verbose "Could not copy $mylog to $logdir.  Please view $copyLog for details.\n"
+	}
+    }
+} else {
+
+    send_user "\n\nAttempting to copy ovs-agent logs from $ServerName...\n"
+    set slog_tmp "$ServerName-ovs-agent.log"
+
+    set success [copyLog $ServerName $Password $serverLog $logdir $slog_tmp]
+    if {$success == "True"} {
+	send_verbose "Successfully copied $serverLog to $logdir$slog_tmp\n"
+    } else {
+	send_verbose "Could not copy $serverLog to $logdir.  Please view $copyLog for details.\n"
+    }
+
+    send_user "\nLogging into $ServerName to run sosreport and multipathd.\n"
+    send_user "The commands will be run on the remote server, and then after\n"
+    send_user "logging out of the server, the files will be copied over\n"
+    send_user "to $logdir\n"
+    
+    set sosreport "False"
+    set multipathd "False"
+    set mpdfile "/tmp/$ServerName-multipathd.txt"
+    set mpdtmp "$ServerName-multipathd.txt"
+    
+    NodeLogin
+    set sosreport [runSOS $ServerName $logdir $ticket]
+    sleep 30
+    send_user "\n\n"
+    set multipathd [runMultipathd $mpdfile]
+    NodeLogout
+ 
+    send_user "Waiting for 30 seconds...\n"
+    sleep 30
+
+    if {$sosreport == "False"} {
+	send_user "\n\nIssues were encountered while running sosreport on $ServerName,\n"
+	send_user "and therefore it will be necessary to run sosreport and copy it\n"
+	send_user "to $logdir manually.\n"
+    } else {
+	set sos_tmp [getFileName $sosreport]
+	if {$sos_tmp == "False"} {
+	    send_user "\n\nUnable to read sosreport filename, therefore unable to copy\n"
+	    send_user "the file over.  sosreport was successfully executed on\n"
+	    send_user "$ServerName, so you can manually copy the file to $logdir."
+	} else {
+	    set success [copyLog $ServerName $Password $sosreport $logdir $sos_tmp]
+	    if {$success == "True"} {
+		send_verbose "\nSuccessfully copied $sosreport to $logdir\n"
+	    } else {
+		send_verbose "\nCould not copy $sosreport to $logdir.  Please view $copyLog for details.\n"
+	    }
+	}
+    }
+
+
+
+    send_user "Waiting for two minutes for the copying of the sosreport to actually complete...\n"
+    sleep 120
+    set success "False"
+    
+    if {$multipathd == "False"} {
+	send_user "\n\nIssues were encountered while running multipathd on $ServerName,\n"
+	send_user "and therefore it will be necessary to run multipathd and copy the\n"
+	send_user "captured output to $logdir manually.\n"	
+    } else {
+	set success [copyLog $ServerName $Password $mpdfile $logdir $mpdtmp]
+	if {$success == "True"} {
+	    send_verbose "\nSuccessfully copied $mpdtmp to $logdir\n"
+	} else {
+	    send_verbose "\nCould not copy $mpdtmp to $logdir.  Please view $copyLog for details.\n"
+	}
+    }
+}    
+
+finishRun 0
+    
+	

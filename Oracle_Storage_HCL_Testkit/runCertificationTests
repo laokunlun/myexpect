@@ -1,0 +1,346 @@
+#!/usr/bin/python
+
+##
+##    The Oracle Storage HCL Testkit is a suite of tests for certifying
+##    storage with Oracle VM (OVM).
+##    Copyright (C) 2013 Oracle USA, Inc 
+##
+##    This file is part of the Oracle Storage HCL Testkit.
+##
+##    The Oracle Storage HCL Testkit is free software; you can redistribute 
+##    it and/or modify it under the terms of the GNU General Public License 
+##    as published by the Free Software Foundation; either version 2 of the 
+##    License, or (at your option) any later version.
+##
+##    The Oracle Storage HCL Testkit is distributed in the hope that it will
+##    be useful, but WITHOUT ANY WARRANTY; without even the implied warranty 
+##    of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+##    GNU General Public License for more details.
+##
+##    You should have received a copy of the GNU General Public License
+##    along with the Oracle Storage HCL Testkit.  If not; write to the 
+##    Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
+##    Boston, MA 02110-1301 USA. Or see <http://www.gnu.org/licenses/>.
+##
+
+####################################################################
+###
+###   This is the Oracle Storage HCL Toolkit for certifying storage 
+###   connections over Fibre Channel, iSCSI, and NFS, for OVM 3.2 
+###   utilizing the Oracle Generic SCSI plugin, or a vendor supplied
+###   plugin.
+###
+###   Due to changes in the OVM 3.2 CLI, these tests will not 
+###   succeed on older versions of OVM.
+###
+###   Please read the documentation which accompanies these
+###   scripts for further information on the required system
+###   configurations.
+###  
+#################################################################### 
+
+import sys
+import time
+import re
+import os
+import optparse
+import subprocess
+import atexit
+import hclhelper
+
+
+### If the names of the test files change, 
+### it is neccesary to also update the results
+### dictionary too.
+testSuite1 = {'fc': 'Test_Suite_1-FibreChannel',
+              'iscsi': 'Test_Suite_1-iSCSI'
+              }
+testSuite2 = {'fc': 'Test_Suite_2-FibreChannel',
+              'iscsi': 'Test_Suite_2-iSCSI'
+              }
+testSuite21 = {'fc_setup': 'Test_Suite_2-FibreChannel_Setup',
+               'fc_ag': 'Test_Suite_2-FibreChannel_AccessGroup',
+               'fc_vm': 'Test_Suite_2-FibreChannel_VM',
+               'iscsi_setup': 'Test_Suite_2-iSCSI_Setup',
+               'iscsi_ag': 'Test_Suite_2-iSCSI_AccessGroup',
+               'iscsi_vm': 'Test_Suite_2-iSCSI_VM',
+              }
+testSuite3 = {'nfs': 'Test_Suite_3-NFS'}
+
+testSuite4 = 'TearDown_test_environment'
+results = {'Test_Suite_1-FibreChannel': hclhelper.Colors.OK+'Not Run'+hclhelper.Colors.ENDC,
+           'Test_Suite_1-iSCSI': hclhelper.Colors.OK+'Not Run'+hclhelper.Colors.ENDC,
+           'Test_Suite_2-FibreChannel': hclhelper.Colors.OK+'Not Run'+hclhelper.Colors.ENDC,
+           'Test_Suite_2-iSCSI': hclhelper.Colors.OK+'Not Run'+hclhelper.Colors.ENDC,
+           'Test_Suite_3-NFS': hclhelper.Colors.OK+'Not Run'+hclhelper.Colors.ENDC,
+           'TearDown_test_environment': hclhelper.Colors.OK+'Not Run'+hclhelper.Colors.ENDC,
+           }
+
+timestamp = time.strftime("%H%M%S-%m%d%Y", time.localtime())
+logroot = '/tmp/OVM_HCL/'
+logdir = logroot + timestamp + '/'
+tempconfig = logdir + 'ovm-hcl-config'
+runLog = logdir + 'Certification_Results.log'
+
+
+usage = "Usage: %prog  [-hfgiknpv] [-c | --config CONFIGFILE] [--force]\n\nThe Certification Testkit consists of three separate test suites:\n1. iSCSI and Fibre Channel with the Oracle Generic SCSI Plugin.\n   Verifies standard storage operations using the generic SCSI plugin ensuring\n   that discovery, refresh, and various LUN, repository, and multipath operations\n   can be performed on the storage array. The storage array can be certified for\n   either Fibre Channel or iSCSI (or both) with single or multiple paths to the\n   storage array through dm-multipath\n\n2. iSCSI and Fibre Channel with Vendor-Specific SCSI Plugin.\n   Verifies additional features that area only available in vendor specific\n   plugins.  The storage array may be certified for Fibre Channel or iSCSI\n   (or both) with single or multiple paths to the storage array through\n   dm-multipath. The vendor specific storage plugin being certified with this\n   test suite must be obtained from the storage vendor.\n\n3. File Server (NFS) using the Oracle Generic NFS Storage Plugin\n   Verify network file server operations, ensuring that the network file\n   server is properly recognized and usable by the Oracle VM Manager.\n"
+parser = optparse.OptionParser(usage=usage)
+parser.add_option("-c", "--config", action="store", dest="configFile", default=tempconfig, 
+                  help="The full path to your config file.  If this option is omitted, you will be prompted to enter the required information and a new config file will be generated.")
+parser.add_option("-f", "--fibrechannel", action="store_true", dest='fc', default=False,
+                  help="Select this option if you would like to run the Fibre Channel tests.")
+parser.add_option("--force", action="store_true", dest='force', default=False,
+                  help="By default, Test Suite 1 and Test Suite 3 aren\'t run in sequence to avoid issues with FC or iSCSI initiators being mapped to multiple initiator groups.  If the storage array being certified supports having FC WWN/initiators or iSCSI Node Names/initiators in multiple initiator groups, it is possible to run Test Suites 1 and 3 together by setting this option.")
+parser.add_option("-g", "--getlogs", action="store_true", dest='gatherLogs',
+                  help="Use this option if you would like to gather admin logs from the OVM Manager and Servers.  If this option is specified, no other tests will be run. A config file is required to perform these operations, therefore if the -c option is not set you will be prompted to create a new config file.") 
+parser.add_option("-i", "--iscsi", action="store_true", dest='iscsi', default=False,
+                  help="Select this option if you would like to run the iSCSI tests.")
+parser.add_option("-k", "--cleanup",action="store_true", dest='cleanEnv',
+                  help="If this option is set, only the cleanup scripts will be run.  A config file is required to perform these operations, therefore if one is not supplied on the command line, you will be prompted to create a new config file.  The cleanup scripts should run be after each test run, or prior to running the testkit again in the event of a failure.")
+parser.add_option("-n", "--nfs", action="store_true", dest='nfs', default=False,
+                  help="Select this option if you would like to run the NFS tests.")
+parser.add_option("-p", "--plugin", action="store_true", dest='vendorPlugin', default=False, 
+                  help="If you are certifying a vendor specific plugin, ensure that the plugin is installed on the two OVS Servers, and select this option.  You will be prompted to select the correct plugin name at runtime.")
+parser.add_option("-v", "--verbose", action="store_true", dest='verbose', default=False,
+                  help="If you would like more output, please select this option.")
+
+
+
+
+
+def finishRun(exitStatus, timelapse):
+
+    hclhelper.packageLogs(logroot, logdir, timestamp)
+    lapse = str(timelapse / 60)+"."+str(timelapse % 60)
+
+    print hclhelper.Colors.HEADER+"--------------------------------------------------------------------------"
+    print "                     Final Certification Status"
+    print "--------------------------------------------------------------------------\n"+hclhelper.Colors.ENDC
+
+    print "Test Suite 1 - Storage Certification for FC and iSCSI protocols"
+    print testSuite1['fc'].ljust(27) + results[testSuite1['fc']].rjust(45)
+    print testSuite1['iscsi'].ljust(27) + results[testSuite1['iscsi']].rjust(45)
+
+    print "\nTest Suite 2 - Vendor Specific Plugin Testing for FC and iSCSI"
+    print testSuite2['fc'].ljust(27) + results[testSuite2['fc']].rjust(45)
+    print testSuite2['iscsi'].ljust(27) + results[testSuite2['iscsi']].rjust(45)
+
+    print "\nTest Suite 3 - Storage Certification for the NFS protocol"
+    print testSuite3['nfs'].ljust(27) + results[testSuite3['nfs']].rjust(45)
+
+    print "\nTest Suite 4 - Tearing down and cleaning up"
+    print testSuite4.ljust(27) + results[testSuite4].rjust(45)
+
+    print hclhelper.Colors.HEADER+"--------------------------------------------------------------------------"+hclhelper.Colors.ENDC
+    if exitStatus:
+        print "Overall Status:  ".ljust(27) + hclhelper.Colors.PASS+"PASSED".rjust(36)+hclhelper.Colors.ENDC
+        print "\nCertification tests completed after "+lapse+" minutes."
+        print "\nYour run results and logs have been packaged in the "
+        print logroot+"ovm-storage-hcl_"+timestamp+".tgz file"
+        print hclhelper.Colors.HEADER+"--------------------------------------------------------------------------\n"+hclhelper.Colors.ENDC
+        sys.stdout.close()
+        sys.exit(0)
+    else:
+        print "Overall Status:  ".ljust(27) + hclhelper.Colors.FAIL+"FAILED".rjust(36)+hclhelper.Colors.ENDC
+        print "\nCertification tests completed after "+lapse+" minutes."
+        print "\nYour run results and logs have been packaged in the "
+        print logroot+"ovm-storage-hcl_"+timestamp+".tgz file"
+        print hclhelper.Colors.HEADER+"--------------------------------------------------------------------------\n"+hclhelper.Colors.ENDC
+        sys.stdout.close()
+        sys.exit(2)
+
+
+def main ():
+
+    (options, args) = parser.parse_args() 
+    totallapse = 0
+    chap = "UNSUPPORTED"
+
+    try:
+        os.makedirs(logdir)
+    except OSError, e:
+        print >>sys.stderr, "Execution failed:", e
+        print "Unable to create logging directory: " + logdir
+        print "Exiting...."
+        sys.exit(2)
+
+    ## The tests will open their own logs, but the wrapper
+    ## needs to write all output and results to the screen 
+    ## and the runLog.
+    logger = hclhelper.Logger(sys.stdout, runLog)
+    sys.stdout = logger
+
+    if options.verbose:
+        hclhelper.VERBOSE = True
+        hclhelper.print_verbose("\nSetting VERBOSE=True")
+    else:
+        hclhelper.VERBOSE = False
+    
+
+    ## read from existing, or create a new config file
+    if options.configFile == tempconfig:
+        hclhelper.generateConfig(tempconfig)
+    else:
+        if not hclhelper.verifyConfig(options.configFile, logdir):
+            sys.exit(2)
+        else:
+            print "A copy of "+options.configFile+" has been writen to "+logdir+".\n\n"
+
+
+    ## If the -g option was set, attempt to gather the admin
+    ## logs, sosreports, and multipathd output, then exit
+    ## without running tests.
+    if options.gatherLogs:
+        st = time.time()
+        hclhelper.gatherServerLogs(timestamp, logdir, options.configFile)
+        et = time.time()
+        totallapse = int(et - st) + totallapse
+        finishRun(True,totallapse)
+
+    
+            
+    ## If the -k option was set, attempt to cleanup, and then
+    ## exit without executing any tests.
+    if options.cleanEnv:
+        ovmPassword = hclhelper.getPassWD("OVM Admin user's")
+        status,timelapse = hclhelper.kickOff(options.configFile, testSuite4, logdir, ovmPassword, "blank", chap)
+        if status:
+            results[testSuite4] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+            finishRun(False, timelapse)
+        else:
+            results[testSuite4] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+            finishRun(True, timelapse)
+
+
+    if not options.fc and not options.iscsi and not options.nfs:
+        print hclhelper.Colors.WARNING
+        print "No protocol options were selected, therefore no tests will be run at this time!"+hclhelper.Colors.ENDC
+    else:
+        ## Get the passwords and run tests.
+        ovmPassword = hclhelper.getPassWD("OVM Admin user's")
+        ovmAgent = hclhelper.getPassWD("OVM Agent")
+
+    ######################################################################
+    ####  FibreChannel Tests, for generic and/or vendor plugin
+    ######################################################################
+    if options.fc:
+
+        if not options.vendorPlugin or options.force:
+            status,timelapse = hclhelper.runGenericFC(options.configFile, logdir, ovmPassword, ovmAgent)
+            totallapse = timelapse + totallapse
+
+            if status:
+                results[testSuite1['fc']] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+            else:
+                results[testSuite1['fc']] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+
+        if options.force:
+            status,timelapse = hclhelper.kickOff(options.configFile, testSuite4, logdir, ovmPassword, "blank", chap)
+            if status:
+                results[testSuite4] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+                finishRun(False, timelapse)
+            else:
+                results[testSuite4] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+
+        if options.vendorPlugin:
+
+            storagepass = hclhelper.getPassWD("Storage Array's admin")
+
+            status,timelapse = hclhelper.runVendorTests(options.configFile, logdir, ovmPassword, ovmAgent, 'FC', storagepass)
+            totallapse = timelapse + totallapse
+
+            if status:
+                results[testSuite2['fc']] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+            else:
+                results[testSuite2['fc']] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+                
+                
+    
+
+    ######################################################################
+    ####  iSCSI Tests, for generic and/or vendor plugin
+    ######################################################################
+    if options.iscsi:
+
+        if not options.vendorPlugin or options.force:
+            
+            chap = hclhelper.getChap(options.configFile) 
+                
+            status,timelapse = hclhelper.runGenericiSCSI(options.configFile, logdir, ovmPassword, ovmAgent, chap)
+            totallapse = timelapse + totallapse
+
+            if status:
+                results[testSuite1['iscsi']] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+                
+            else:
+                results[testSuite1['iscsi']] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+
+
+        if options.force:
+            status,timelapse = hclhelper.kickOff(options.configFile, testSuite4, logdir, ovmPassword, "blank", "UNSUPPORTED")
+            if status:
+                results[testSuite4] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+                finishRun(False, timelapse)
+            else:
+                results[testSuite4] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+
+
+        if options.vendorPlugin:
+
+            storagepass = hclhelper.getPassWD("Storage Array's admin")
+
+            status,timelapse = hclhelper.runVendorTests(options.configFile, logdir, ovmPassword, ovmAgent, 'iSCSI', storagepass)
+            totallapse = timelapse + totallapse
+
+            if status:
+                results[testSuite2['iscsi']] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+            else:
+                results[testSuite2['iscsi']] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+                
+
+    ######################################################################
+    ####  NFS Tests
+    ######################################################################
+    if options.nfs:
+
+        status,timelapse = hclhelper.kickOff(options.configFile, testSuite3['nfs'], logdir, ovmPassword, ovmAgent, "UNSUPPORTED")
+        totallapse = timelapse + totallapse
+
+        if status:
+            results[testSuite3['nfs']] = hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC
+        else:
+            results[testSuite3['nfs']] = hclhelper.Colors.PASS+"Passed"+hclhelper.Colors.ENDC
+
+
+    ######################################################################
+    ####  Tally Results
+    ######################################################################
+    myresults = results.values()
+
+    ## Attempt to gather syslog, ovm logs, cli logs, ovs-agent logs
+    ## sosreport, etc. from Manager and Servers.
+    st = time.time()
+
+    hclhelper.gatherServerLogs(timestamp, logdir, options.configFile)
+    
+    et = time.time()
+    totallapse = int(et - st) + totallapse
+
+    if hclhelper.Colors.FAIL+"Failed"+hclhelper.Colors.ENDC in myresults:
+        finishRun(False, totallapse)
+    else:
+        finishRun(True, totallapse)
+
+
+
+if __name__ == "__main__":
+    try:
+        starttime = time.time()
+        main()
+    except (KeyboardInterrupt,IOError):
+        endtime = time.time()
+        print "\n\nCaught user requested termination.  Exiting."
+        finishRun(False, int(endtime - starttime))
+    
+
+

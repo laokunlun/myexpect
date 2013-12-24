@@ -1,0 +1,240 @@
+#!/usr/bin/expect
+
+##
+##    The Oracle Storage HCL Testkit is a suite of tests for certifying
+##    storage with Oracle VM (OVM).
+##    Copyright (C) 2013 Oracle USA, Inc 
+##
+##    This file is part of the Oracle Storage HCL Testkit.
+##
+##    The Oracle Storage HCL Testkit is free software; you can redistribute 
+##    it and/or modify it under the terms of the GNU General Public License 
+##    as published by the Free Software Foundation; either version 2 of the 
+##    License, or (at your option) any later version.
+##
+##    The Oracle Storage HCL Testkit is distributed in the hope that it will
+##    be useful, but WITHOUT ANY WARRANTY; without even the implied warranty 
+##    of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+##    GNU General Public License for more details.
+##
+##    You should have received a copy of the GNU General Public License
+##    along with the Oracle Storage HCL Testkit.  If not; write to the 
+##    Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, 
+##    Boston, MA 02110-1301 USA. Or see <http://www.gnu.org/licenses/>.
+##
+
+source commonExpectDef.cli
+
+################ global variables #####################
+set VERBOSE [lindex $argv 2]
+set send_human {.1 .3 1 .05 2}
+
+set prompt "OVM> "
+set successMsg "Status: Success"
+set failureMsg "Status: Failure"
+set timeout 600
+set testStep 0
+
+########### template argument definitions #############
+set ovmUser ${ovmUser}
+set adminServer ${adminServer}
+set ovmPassword [lindex $argv 0]
+set ovmServerMasterIP ${ovmServerMasterIP}
+set ovmServerSlaveIP ${ovmServerSlaveIP}
+
+# Storage
+set SAN_ServerName ${SAN_ServerName}
+set NFS_ServerName ${NFS_ServerName}
+set generic_FC "Unmanaged FibreChannel Storage Array"
+set generic_iSCSI "Unmanaged iSCSI Storage Array"
+set storageNetworkIP ${storageNetworkIP}
+
+## Pool Parameters
+set serverPoolList {iscsi_testpool1 fc_testpool1 nfs_testpool2.1 nfs_testpool2.2 iscsi_testpool3 fc_testpool3}
+
+## Repository Parameters
+set repoList {repo_fc1.1 repo_iscsi1.1 repo_nfs2.1 repo_nfs2.2 repo_nfs2.3 repo_fc3.1 repo_iscsi3.1}
+
+## VM Parameters
+set vmList {VM_fc1.1 VM_fc1.2 VM_iscsi1.1 VM_iscsi1.2 VM_fc3.1 VM_fc3.2 VM_fc3.3 VM_fc3.4 VM_iscsi3.1 VM_iscsi3.2 VM_iscsi3.3 VM_iscsi3.4 VM_nfs2.1 VM_nfs2.2}
+
+## Network
+set VM_Network ${VM_Network}
+set vnicList {00:21:f6:ca:fe:ba 00:21:f6:ca:fe:bb 00:21:f6:ca:fe:bc 00:21:f6:ca:fe:bd 00:21:f6:ca:fe:be 00:21:f6:ca:fe:bf 00:21:f6:ca:fe:b1 00:21:f6:ca:fe:b2 00:21:f6:ca:fe:b3 00:21:f6:ca:fe:b4 00:21:f6:ca:fe:b5 00:21:f6:ca:fe:b6 00:21:f6:ca:fe:b7 00:21:f6:ca:fe:b8 00:21:f6:ca:fe:b9 00:21:f6:ca:fe:c1 00:21:f6:ca:fe:c2 00:21:f6:ca:fe:c3 00:21:f6:ca:fe:c4 00:21:f6:ca:fe:c5}
+
+## Logging
+set hcllogdir ${hcllogdir}
+set logfile $hcllogdir
+append logfile "cleanup.log"
+
+
+#################### Execute Tear Down sequence ##################
+log_user 0
+OVMlogin
+log_file -a $logfile
+
+
+send_user "\n\nAttempting to clean up the Test Environment.\n\n"
+
+send_user "Stopping and deleting VMs....\n"
+set status [deleteVM $vmList]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo VMs matching those created by the test scripts were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted expected VMs.  Continuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+sleep 3
+
+send_user "\n\nAttempting to delete the Repositories and all contents....\n"
+set status [deleteRepo $repoList]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo repositories matching those created by the test scripts were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted all Repositories.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+sleep 3
+
+send_user "\n\nAttempting to delete the Server Pools....\n"
+set status [deleteServerpool $serverPoolList]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo Server Pools matching those created by the test scripts were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted all Server Pools.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+sleep 3
+
+send_user "\n\nAttempting to delete the Servers....\n"
+set status [deleteServers $ovmServerMasterIP $ovmServerSlaveIP]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo Servers matching $ovmServerMasterIP or $ovmServerSlaveIP were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted $ovmServerMasterIP and $ovmServerSlaveIP.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+sleep 4
+
+send_user "\n\nAttempting to delete the vNICs....\n"
+set status [deleteVNICs $vnicList]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo vNICs matching those created by the test scripts were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted all vNICs created by the scripts.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+sleep 4
+
+send_user "\n\nAttempting to delete the $VM_Network network....\n"
+set status [deleteNetwork $VM_Network]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNetwork named $VM_Network could not be found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted Network: $VM_Network.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+
+sleep 4
+
+send_user "\n\nAttempting to delete the SAN Server $SAN_ServerName....\n"
+set status [deleteSANServer $SAN_ServerName]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo SAN Servers matching those created by the test scripts were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted SAN Server: $SAN_ServerName.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+sleep 4
+
+send_user "\n\nAttempting to delete the File Server $NFS_ServerName....\n"
+set status [deleteFileServer $NFS_ServerName]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo File Servers matching those created by the test scripts were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted File Server: $NFS_ServerName.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+
+
+
+send_user "\n\nAttempting to delete the Storage Network $storageNetworkIP....\n"
+set status [deleteNetwork $storageNetworkIP]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNetwork named $storageNetworkIP could not be found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted Network: $storageNetworkIP.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+send_user "\n\nAttempting to delete any Physical Disks that were left behind....\n"
+set status [deleteStragglerLUNs]
+switch -- $status \
+    "False" {
+	finishRun 2
+    } "None" {
+	send_verbose "\nNo straggler LUNs were found.\nContinuing.\n\n"
+    } "True" {
+	send_verbose "\nSuccessfully deleted all straggler LUNs.\nContinuing.\n\n"
+    } default {
+	send_user "An unexpected error has occurred,"
+	finishRun 2
+    }
+
+
+
+send_user "\n\nCleanup script executed successfully.\n";
+finishRun 0
